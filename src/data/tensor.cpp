@@ -1,7 +1,6 @@
 #include "data/tensor.h"
 #include <omp.h>
 
-
 namespace kuiper_infer {
 
     template<typename T>
@@ -211,14 +210,19 @@ namespace kuiper_infer {
 
     template<typename T>
     void Tensor<T>::fill(const std::vector<T>& values, bool row_major) {
+       CHECK(!this->data_.empty()) << "The data area of the tensor is empty.";
+        const uint32_t total_elems = this->data_.size();
+        CHECK_EQ(values.size(), total_elems);
         if (row_major) {
             const uint32_t rows = this->rows();
             const uint32_t cols = this->cols();
-            const uint32_t channels = this->channels();
             const uint32_t planes = rows * cols;
-            for (uint32_t c = 0; c < channels; ++c) {
-                arma::Mat<T> channel_data_t(const_cast<T*>(values.data() + c * planes), rows, cols, false, true);
-                this->data_.slice(c) = channel_data_t;
+            const uint32_t channels = this->channels();
+
+            for (uint32_t i = 0; i < channels; ++i) {
+            arma::Mat<T> channel_data_t(const_cast<T*>(values.data()) + i * planes, this->cols(),
+                                        this->rows(), false, true);
+            this->data_.slice(i) = channel_data_t.t();
             }
         } else {
             std::copy(values.begin(), values.end(), this->data_.memptr());
@@ -278,13 +282,18 @@ namespace kuiper_infer {
 
     template<typename T>
     void Tensor<T>::reshape(const std::vector<uint32_t>& shapes, bool row_major) {
-        const uint32_t origin_size = this->data_.size();
-        const uint32_t current_size = std::accumulate(shapes.begin(), shapes.end(), 1, std::multiplies<uint32_t>());
+        CHECK(!this->data_.empty()) << "The data area of the tensor is empty.";
+        CHECK(!shapes.empty());
+        const size_t origin_size = this->size();
+        const size_t current_size =
+            std::accumulate(shapes.begin(), shapes.end(), size_t(1), std::multiplies<size_t>());
+        CHECK(shapes.size() <= 3);
+        CHECK(current_size == origin_size);
         if (!row_major) {
             if (shapes.size() == 3) {
-                this->data_ = this->data_.reshape(shapes.at(1), shapes.at(2), shapes.at(0));
+                this->data_.reshape(shapes.at(1), shapes.at(2), shapes.at(0));
                 this->raw_shapes_ = {shapes.at(0), shapes.at(1), shapes.at(2)};
-            } else if (shapes.size() == 2) { 
+            } else if (shapes.size() == 2) {
                 this->data_.reshape(shapes.at(0), shapes.at(1), 1);
                 this->raw_shapes_ = {shapes.at(0), shapes.at(1)};
             } else {
@@ -292,43 +301,83 @@ namespace kuiper_infer {
                 this->raw_shapes_ = {shapes.at(0)};
             }
         } else {
-           if (shapes.size() == 3) {
+            if (shapes.size() == 3) {
             this->review({shapes.at(0), shapes.at(1), shapes.at(2)});
             this->raw_shapes_ = {shapes.at(0), shapes.at(1), shapes.at(2)};
-           } else if (shapes.size() == 2) {
-            this->review({shapes.at(0), shapes.at(1)});
+            } else if (shapes.size() == 2) {
+            this->review({1, shapes.at(0), shapes.at(1)});
             this->raw_shapes_ = {shapes.at(0), shapes.at(1)};
-           } else {
+            } else {
             this->review({1, 1, shapes.at(0)});
             this->raw_shapes_ = {shapes.at(0)};
-           }
+            }
         }
     }
 
     template<typename T>
     void Tensor<T>::flatten(bool row_major) {
+        CHECK(!this->data_.empty()) << "The data area of the tensor is empty.";
         const uint32_t size = this->data_.size();
         this->reshape({size}, row_major);
     }
     
+
     template<typename T>
+    T* Tensor<T>::raw_ptr(size_t offset) {
+        return this->data_.memptr() + offset;
+    }
+
+    template <typename T>
+    T* Tensor<T>::matrix_raw_ptr(uint32_t index) {
+        CHECK_LT(index, this->channels());
+        size_t offset = index * this->plane_size();
+        CHECK_LE(offset, this->size());
+        T* mem_ptr = this->raw_ptr(offset);
+        return mem_ptr;
+    }
+
+    template <typename T>
     const T* Tensor<T>::raw_ptr() const {
+        CHECK(!this->data_.empty()) << "The data area of the tensor is empty.";
         return this->data_.memptr();
     }
 
-    template<typename T>
-    T* Tensor<T>::raw_ptr(uint32_t offset) {
+    template <typename T>
+    const T* Tensor<T>::raw_ptr(size_t offset) const {
+        const size_t size = this->size();
+        CHECK(!this->data_.empty()) << "The data area of the tensor is empty.";
+        CHECK_LT(offset, size);
         return this->data_.memptr() + offset;
+    }
+
+
+    template <typename T>
+    size_t Tensor<T>::plane_size() const {
+        CHECK(!this->data_.empty()) << "The data area of the tensor is empty.";
+        return this->rows() * this->cols();
+    }
+
+    template <typename T>
+    const T* Tensor<T>::matrix_raw_ptr(uint32_t index) const {
+        CHECK_LT(index, this->channels());
+        size_t offset = index * this->plane_size();
+        CHECK_LE(offset, this->size());
+        const T* mem_ptr = this->raw_ptr(offset);
+        return mem_ptr;
     }
 
     template<typename T>
     void Tensor<T>::review(const std::vector<uint32_t>& shapes) {
-        uint32_t target_channels = shapes.at(0);
-        uint32_t target_rows = shapes.at(1);
-        uint32_t target_cols = shapes.at(2);
-        arma::Cube<T> new_data(target_channels, target_rows, target_cols);
+        CHECK(!this->data_.empty()) << "The data area of the tensor is empty.";
+        CHECK_EQ(shapes.size(), 3);
+        const uint32_t target_ch = shapes.at(0);
+        const uint32_t target_rows = shapes.at(1);
+        const uint32_t target_cols = shapes.at(2);
+
+        CHECK_EQ(this->data_.size(), target_ch * target_cols * target_rows);
+        arma::Cube<T> new_data(target_rows, target_cols, target_ch);
         const uint32_t plane_size = target_rows * target_cols;
-    #pragma omp parallel for
+        #pragma omp parallel for
         for (uint32_t channel = 0; channel < this->data_.n_slices; ++channel) {
             const uint32_t plane_start = channel * data_.n_rows * data_.n_cols;
             for (uint32_t src_col = 0; src_col < this->data_.n_cols; ++src_col) {

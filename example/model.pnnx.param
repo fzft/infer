@@ -1,0 +1,6 @@
+7767517
+4 3
+pnnx.Input               pnnx_input_0             0 1 0 #0=(10)f32
+nn.Linear                linear                   1 1 0 1 bias=True in_features=10 out_features=10 @bias=(10)f32 @weight=(10,10)f32 #0=(10)f32 #1=(10)f32
+F.relu                   F.relu_0                 1 1 1 2 $input=1 #1=(10)f32 #2=(10)f32
+pnnx.Output              pnnx_output_0            1 0 2 #2=(10)f32

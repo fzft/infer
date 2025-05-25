@@ -148,14 +148,14 @@ namespace kuiper_infer {
             * @param min 最小值
             * @param max 最大值
             */
-            void randu(T min, T max);
+            void randu(T min = 0, T max = 1);
 
            /*
             * @brief 填充张量
             * @param mean 均值
             * @param std 标准差
             */
-            void randn(T mean, T std);
+            void randn(T mean = 0, T std = 1);
 
 
             void transform(const function<T(const T&)> &op);
@@ -171,15 +171,37 @@ namespace kuiper_infer {
             void reshape(const vector<uint32_t>& shape, bool row_major = false);
 
 
-            void flatten(bool row_major = true);
+            void flatten(bool row_major = false);
 
             const T* raw_ptr() const;
 
 
-            T* raw_ptr(uint32_t offset);
+            T* raw_ptr(size_t offset);
+
+            const T* raw_ptr(size_t offset) const;
+
+            size_t plane_size() const;
+
+            /*
+            * @brief 获取张量指定位置的值
+            * @param index 索引
+            * @return 指定位置的值
+            */
+            T* matrix_raw_ptr(uint32_t index);
+
+            /*
+            * @brief 获取张量指定位置的值
+            * @param index 索引
+            * @return 指定位置的值
+            */
+            const T* matrix_raw_ptr(uint32_t index) const;
 
         private:
             arma::Cube<T> data_;
             vector<uint32_t> raw_shapes_;
     };
+
+    
+    using sftensor = std::shared_ptr<Tensor<float>>;
+    using ftensor = Tensor<float>;
 };
